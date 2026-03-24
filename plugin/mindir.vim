@@ -2,7 +2,7 @@
 " Inspired by vim-readdir by Aristotle Pagaltzis (https://github.com/ap/vim-readdir)
 " ~/vimfiles/plugin/mindir.vim
 "
-" CR/2-click = open   -/BS = up   a = dotfiles   ~ = home
+" e/2-click = open   p = up   d = dotfiles   h = home
 " r = refresh   q = quit
 
 if v:versionlong < 9000000
@@ -76,7 +76,11 @@ function! s:Render(dir, focus)
   let l:idx = l:target == '' ? -1 : index(l:content, l:target)
   call cursor(l:idx >= 0 ? l:idx + 1 : 1, 1)
 
-  silent! execute 'file' fnameescape('d::' . fnamemodify(l:path[: -2], ':t'))
+  let l:pfx = get(g:, 'mindir_prefix', 'd::')
+  if l:pfx ==# ''
+    let l:pfx = ' '
+  endif
+  silent! execute 'file' fnameescape(l:pfx . fnamemodify(l:path[: -2], ':t'))
   silent execute 'lchdir' fnameescape(l:path)
 endfunction
 
@@ -148,12 +152,11 @@ function! s:Setup(dir)
   nnoremap <buffer>        <Plug>(mindir-open)    :call <SID>Open()<CR>
   nnoremap <buffer>        <Plug>(mindir-quit)    :call <SID>Quit()<CR>
 
-  nmap <buffer><nowait> <CR>          <Plug>(mindir-enter)
+  nmap <buffer><nowait> e             <Plug>(mindir-enter)
   nmap <buffer><nowait> <2-LeftMouse> <Plug>(mindir-enter)
-  nmap <buffer><nowait> -             <Plug>(mindir-up)
-  nmap <buffer><nowait> <BS>          <Plug>(mindir-up)
-  nmap <buffer><nowait> a             <Plug>(mindir-dots)
-  nmap <buffer><nowait> ~             <Plug>(mindir-home)
+  nmap <buffer><nowait> p             <Plug>(mindir-up)
+  nmap <buffer><nowait> d             <Plug>(mindir-dots)
+  nmap <buffer><nowait> h             <Plug>(mindir-home)
   nmap <buffer><nowait> r             <Plug>(mindir-refresh)
   nmap <buffer><nowait> o             <Plug>(mindir-open)
   nmap <buffer><nowait> q             <Plug>(mindir-quit)
