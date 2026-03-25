@@ -17,6 +17,16 @@ Plug 'gsa9/vim-mindir'
 
 Directories are listed first (with a trailing separator), then files, both sorted case-insensitively. The `..` entry at the top always leads to the parent directory.
 
+### Replacing netrw
+
+Set `g:mindir_replace_netrw` before the plugin loads to disable netrw and redirect all directory opens to mindir:
+
+```vim
+let g:mindir_replace_netrw = 1
+```
+
+Now `:e .`, `:e ~/code`, `:split ~/Downloads`, etc. all launch the popup instead of netrw.
+
 ### Keys
 
 | Key | Action |
@@ -27,23 +37,77 @@ Directories are listed first (with a trailing separator), then files, both sorte
 | `h` | Go to home directory |
 | `j` / `Down` | Move cursor down |
 | `k` / `Up` | Move cursor up |
-| `Esc` | Close popup |
+| `Esc` / `q` | Close popup |
 
 ### Customizing keys
 
 Override individual actions via `g:mindir_keys`. Unspecified actions keep their defaults.
 
+All actions and their defaults:
+
 ```vim
 let g:mindir_keys = {
-      \ 'open':   'o',
-      \ 'parent': '-',
-      \ 'home':   '~',
+      \ 'open':   "\<CR>",
+      \ 'parent': 'p',
+      \ 'dots':   'd',
+      \ 'home':   'h',
+      \ 'down':   ['j', "\<Down>"],
+      \ 'up':     ['k', "\<Up>"],
+      \ 'close':  ['q', "\<Esc>"],
       \ }
+```
+
+Values can be a single key or a list of keys. Only include actions you want to change — unspecified actions keep their defaults:
+
+```vim
+let g:mindir_keys = {'open': 'l', 'parent': 'h'}
 ```
 
 Available actions: `open`, `parent`, `dots`, `home`, `down`, `up`, `close`.
 
-`j`/`k`, arrow keys, and `Esc` are always active regardless of overrides.
+### Appearance
+
+The popup sizes itself to fit its contents, up to a maximum based on the Vim window dimensions. Long listings scroll automatically.
+
+The popup uses the `MindirPopup` highlight group (black background by default). Directories and `..` use the built-in `Directory` group. Override either in your vimrc:
+
+```vim
+" popup body and border
+highlight MindirPopup ctermbg=DarkBlue guibg=#1a1a2e
+
+" directory entries
+highlight Directory ctermfg=Cyan guifg=#5eead4
+```
+
+The `cursorline` highlight inside the popup follows your `PmenuSel` group.
+
+### Example mappings
+
+The plugin does not define any global keymaps — only the `:Mindir` command. Add mappings to your vimrc to launch it quickly:
+
+```vim
+" browse from the current file's directory
+nnoremap <Leader>e :Mindir<CR>
+
+" browse from the working directory
+nnoremap <Leader>. :Mindir .<CR>
+
+" browse from home
+nnoremap <Leader>~ :Mindir ~<CR>
+
+" browse a project root
+nnoremap <Leader>p :Mindir ~/code<CR>
+```
+
+Any directory path works — `:Mindir` accepts the same paths as `:edit`:
+
+```vim
+" jump straight to vim config
+nnoremap <Leader>v :Mindir ~/.vim<CR>
+
+" browse parent of current file's directory
+nnoremap <Leader>u :Mindir %:p:h:h<CR>
+```
 
 ## Options
 
@@ -51,6 +115,7 @@ Available actions: `open`, `parent`, `dots`, `home`, `down`, `up`, `close`.
 |---|---|---|
 | `g:mindir_dots` | `0` / `1` — show dotfiles on startup | `0` |
 | `g:mindir_keys` | `{}` — action-to-key overrides (see above) | `{}` |
+| `g:mindir_replace_netrw` | `0` / `1` — disable netrw, open directories with mindir | `0` |
 
 ## Migrating from the buffer-based version
 

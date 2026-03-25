@@ -8,6 +8,8 @@ if exists('g:loaded_mindir')
 endif
 let g:loaded_mindir = 1
 
+highlight default MindirPopup ctermbg=Black guibg=Black cterm=NONE gui=NONE
+
 let s:SEP = fnamemodify('.', ':p')[-1 :]
 
 let s:DEFAULT_KEYS = {
@@ -15,9 +17,9 @@ let s:DEFAULT_KEYS = {
       \ 'parent': 'p',
       \ 'dots':   'd',
       \ 'home':   'h',
-      \ 'down':   'j',
-      \ 'up':     'k',
-      \ 'close':  "\<Esc>",
+      \ 'down':   ['j', "\<Down>"],
+      \ 'up':     ['k', "\<Up>"],
+      \ 'close':  ['q', "\<Esc>"],
       \ }
 
 let s:state = {}
@@ -26,15 +28,11 @@ function! s:BuildKeymap()
   let l:merged = copy(s:DEFAULT_KEYS)
   call extend(l:merged, get(g:, 'mindir_keys', {}))
   let l:keymap = {}
-  for [l:action, l:key] in items(l:merged)
-    let l:keymap[l:key] = l:action
+  for [l:action, l:keys] in items(l:merged)
+    for l:key in (type(l:keys) == v:t_list ? l:keys : [l:keys])
+      let l:keymap[l:key] = l:action
+    endfor
   endfor
-  " Navigation and close always active regardless of user overrides
-  let l:keymap['j'] = 'down'
-  let l:keymap['k'] = 'up'
-  let l:keymap["\<Up>"] = 'up'
-  let l:keymap["\<Down>"] = 'down'
-  let l:keymap["\<Esc>"] = 'close'
   return l:keymap
 endfunction
 
@@ -170,6 +168,8 @@ function! s:Open(...)
         \ 'maxheight':  &lines - 6,
         \ 'maxwidth':   &columns - 10,
         \ 'minwidth':   30,
+        \ 'highlight':  'MindirPopup',
+        \ 'borderhighlight': ['MindirPopup'],
         \ })
 
   call s:ApplySyntax()
@@ -177,3 +177,17 @@ function! s:Open(...)
 endfunction
 
 command! -nargs=? -complete=dir Mindir call s:Open(<f-args>)
+
+if get(g:, 'mindir_replace_netrw', 0)
+  let g:loaded_netrwPlugin = 1
+  let g:loaded_netrw = 1
+
+  augroup mindir_netrw
+    autocmd!
+    autocmd BufEnter * if isdirectory(expand('%:p')) |
+          \ let s:dir = expand('%:p') |
+          \ bwipeout! |
+          \ execute 'Mindir ' . fnameescape(s:dir) |
+          \ endif
+  augroup END
+endif
