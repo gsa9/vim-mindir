@@ -20,6 +20,7 @@ let s:DEFAULT_KEYS = {
       \ 'down':   ['j', "\<Down>"],
       \ 'up':     ['k', "\<Up>"],
       \ 'close':  ['q', "\<Esc>"],
+      \ 'bottom': 'G',
       \ }
 
 let s:state = {}
@@ -106,6 +107,20 @@ function! s:Selected(winid)
 endfunction
 
 function! s:Filter(winid, key)
+  if s:state.pending ==# 'g'
+    let s:state.pending = ''
+    if a:key ==# 'g'
+      call s:SetCursor(1)
+      return 1
+    endif
+    " Not gg — fall through and handle this key normally
+  endif
+
+  if a:key ==# 'g' && !has_key(s:state.keymap, 'g')
+    let s:state.pending = 'g'
+    return 1
+  endif
+
   let l:action = get(s:state.keymap, a:key, '')
 
   if l:action ==# 'open'
@@ -131,6 +146,8 @@ function! s:Filter(winid, key)
     call win_execute(a:winid, 'normal! j')
   elseif l:action ==# 'up'
     call win_execute(a:winid, 'normal! k')
+  elseif l:action ==# 'bottom'
+    call s:SetCursor(len(s:state.content))
   elseif l:action ==# 'close'
     call popup_close(a:winid)
   endif
@@ -155,6 +172,7 @@ function! s:Open(...)
         \ 'winid':   0,
         \ 'caller':  win_getid(),
         \ 'keymap':  s:BuildKeymap(),
+        \ 'pending': '',
         \ }
 
   let [l:lines, l:content, l:focus_line] = s:Render(l:dir, '')

@@ -37,6 +37,8 @@ Now `:e .`, `:e ~/code`, `:split ~/Downloads`, etc. all launch the popup instead
 | `h` | Go to home directory |
 | `j` / `Down` | Move cursor down |
 | `k` / `Up` | Move cursor up |
+| `gg` | Go to first entry |
+| `G` | Go to last entry |
 | `Esc` / `q` | Close popup |
 
 ### Customizing keys
@@ -54,6 +56,7 @@ let g:mindir_keys = {
       \ 'down':   ['j', "\<Down>"],
       \ 'up':     ['k', "\<Up>"],
       \ 'close':  ['q', "\<Esc>"],
+      \ 'bottom': 'G',
       \ }
 ```
 
@@ -63,7 +66,9 @@ Values can be a single key or a list of keys. Only include actions you want to c
 let g:mindir_keys = {'open': 'l', 'parent': 'h'}
 ```
 
-Available actions: `open`, `parent`, `dots`, `home`, `down`, `up`, `close`.
+Available actions: `open`, `parent`, `dots`, `home`, `down`, `up`, `close`, `bottom`.
+
+`gg` (go to first entry) is built-in and always available unless `g` is mapped to an action via `g:mindir_keys`.
 
 ### Appearance
 
