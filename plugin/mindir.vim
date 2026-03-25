@@ -2,7 +2,7 @@
 " Inspired by vim-readdir by Aristotle Pagaltzis (https://github.com/ap/vim-readdir)
 " ~/vimfiles/plugin/mindir.vim
 "
-" e/2-click = open   p = up   d = dotfiles   h = home
+" e = dir   o/2-click = open   CR = peek   p = up   d = dotfiles   h = home
 " r = refresh   q = quit
 
 if v:versionlong < 9000000
@@ -99,6 +99,17 @@ function! s:Enter()
   endif
 endfunction
 
+function! s:Dir()
+  let l:target = s:Selected()
+  if !isdirectory(l:target)
+    return
+  endif
+  if fnamemodify(l:target, ':p') ==? b:mindir.cwd
+    return
+  endif
+  call s:Render(l:target, b:mindir.cwd)
+endfunction
+
 function! s:Up()
   if empty(b:mindir.content)
     return
@@ -107,6 +118,16 @@ function! s:Up()
 endfunction
 
 function! s:Open()
+  let l:target = s:Selected()
+  if isdirectory(l:target)
+    return
+  endif
+  let l:mindir_buf = bufnr()
+  execute 'edit' fnameescape(l:target)
+  execute 'silent! bwipeout' l:mindir_buf
+endfunction
+
+function! s:Peek()
   let l:target = s:Selected()
   if isdirectory(l:target)
     return
@@ -150,10 +171,13 @@ function! s:Setup(dir)
   nnoremap <buffer>        <Plug>(mindir-home)    :call <SID>Render($HOME, '')<CR>
   nnoremap <buffer>        <Plug>(mindir-refresh) :call <SID>Refresh()<CR>
   nnoremap <buffer>        <Plug>(mindir-open)    :call <SID>Open()<CR>
+  nnoremap <buffer>        <Plug>(mindir-dir)     :call <SID>Dir()<CR>
+  nnoremap <buffer>        <Plug>(mindir-peek)    :call <SID>Peek()<CR>
   nnoremap <buffer>        <Plug>(mindir-quit)    :call <SID>Quit()<CR>
 
-  nmap <buffer><nowait> e             <Plug>(mindir-enter)
+  nmap <buffer><nowait> e             <Plug>(mindir-dir)
   nmap <buffer><nowait> <2-LeftMouse> <Plug>(mindir-enter)
+  nmap <buffer><nowait> <CR>          <Plug>(mindir-peek)
   nmap <buffer><nowait> p             <Plug>(mindir-up)
   nmap <buffer><nowait> d             <Plug>(mindir-dots)
   nmap <buffer><nowait> h             <Plug>(mindir-home)
