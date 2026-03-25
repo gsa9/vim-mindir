@@ -1,16 +1,7 @@
-" mindir.vim — minimal directory browser for gVim 9.0+ on Windows 11
-" Inspired by vim-readdir by Aristotle Pagaltzis (https://github.com/ap/vim-readdir)
-" ~/vimfiles/plugin/mindir.vim
-"
-" e = dir   o/2-click = open   CR = peek   p = up   d = dotfiles   h = home
-" r = refresh   q = quit
-
-if v:versionlong < 9000000
-  echoerr 'mindir.vim requires Vim 9.0+'
+if !has('popupwin')
+  echoerr 'mindir.vim requires Vim with +popupwin'
   finish
 endif
-
-let g:loaded_netrwPlugin = 1
 
 if exists('g:loaded_mindir')
   finish
@@ -19,26 +10,44 @@ let g:loaded_mindir = 1
 
 let s:SEP = fnamemodify('.', ':p')[-1 :]
 
-function! s:Selected()
-  let l:i = line('.') - 1
-  if l:i < 0 || l:i >= len(b:mindir.content)
-    return b:mindir.cwd
-  endif
-  return b:mindir.content[l:i]
+let s:DEFAULT_KEYS = {
+      \ 'open':   "\<CR>",
+      \ 'parent': 'p',
+      \ 'dots':   'd',
+      \ 'home':   'h',
+      \ 'down':   'j',
+      \ 'up':     'k',
+      \ 'close':  "\<Esc>",
+      \ }
+
+let s:state = {}
+
+function! s:BuildKeymap()
+  let l:merged = copy(s:DEFAULT_KEYS)
+  call extend(l:merged, get(g:, 'mindir_keys', {}))
+  let l:keymap = {}
+  for [l:action, l:key] in items(l:merged)
+    let l:keymap[l:key] = l:action
+  endfor
+  " Navigation and close always active regardless of user overrides
+  let l:keymap['j'] = 'down'
+  let l:keymap['k'] = 'up'
+  let l:keymap["\<Up>"] = 'up'
+  let l:keymap["\<Down>"] = 'down'
+  let l:keymap["\<Esc>"] = 'close'
+  return l:keymap
 endfunction
 
 function! s:Render(dir, focus)
   let l:path = fnamemodify(a:dir, ':p')
   let l:parent = fnamemodify(l:path[: -2], ':h')
 
-  " readdirex: one FindFirstFile call returns name + type together,
-  " avoids N separate GetFileAttributes syscalls from isdirectory()
   let l:entries = []
   try
-    let l:entries = readdirex(l:path, {e -> b:mindir.dots || e.name[0] != '.'})
+    let l:entries = readdirex(l:path, {e -> s:state.dots || e.name[0] != '.'})
   catch
     echohl ErrorMsg | echomsg 'mindir: ' . v:exception | echohl None
-    return
+    return ['..'], [l:parent], 1
   endtry
 
   let l:dirs = []
@@ -64,146 +73,107 @@ function! s:Render(dir, focus)
     call add(l:content, l:path . l:f)
   endfor
 
-  setlocal modifiable
-  call deletebufline(bufnr(), 1, line('$'))
-  call setline(1, l:lines)
-  setlocal nomodifiable nomodified
-
-  let b:mindir.cwd = l:path
-  let b:mindir.content = l:content
+  let s:state.cwd = l:path
+  let s:state.content = l:content
 
   let l:target = substitute(a:focus, '[/\\]$', '', '')
   let l:idx = l:target == '' ? -1 : index(l:content, l:target)
-  call cursor(l:idx >= 0 ? l:idx + 1 : 1, 1)
+  let l:focus_line = l:idx >= 0 ? l:idx + 1 : 1
 
-  let l:pfx = get(g:, 'mindir_prefix', 'd::')
-  if l:pfx ==# ''
-    let l:pfx = ' '
-  endif
-  silent! execute 'file' fnameescape(l:pfx . fnamemodify(l:path[: -2], ':t'))
-  silent execute 'lchdir' fnameescape(l:path)
+  return [l:lines, l:content, l:focus_line]
 endfunction
 
-function! s:Enter()
-  let l:target = s:Selected()
-  if isdirectory(l:target)
-    " ==? is case-insensitive — required for Windows paths
-    if fnamemodify(l:target, ':p') ==? b:mindir.cwd
-      return
+function! s:ApplySyntax()
+  call win_execute(s:state.winid, 'syntax clear | syntax match Directory /^\.\.$\|.*[/\\]$/')
+endfunction
+
+function! s:SetCursor(line)
+  call win_execute(s:state.winid, 'call cursor(' . a:line . ', 1)')
+endfunction
+
+function! s:Navigate(dir, focus)
+  let [l:lines, l:content, l:focus_line] = s:Render(a:dir, a:focus)
+  call popup_settext(s:state.winid, l:lines)
+  call popup_setoptions(s:state.winid, {'title': ' ' . fnamemodify(s:state.cwd[: -2], ':t') . ' '})
+  call s:ApplySyntax()
+  call s:SetCursor(l:focus_line)
+endfunction
+
+function! s:Selected(winid)
+  let l:idx = line('.', a:winid) - 1
+  if l:idx < 0 || l:idx >= len(s:state.content)
+    return s:state.cwd
+  endif
+  return s:state.content[l:idx]
+endfunction
+
+function! s:Filter(winid, key)
+  let l:action = get(s:state.keymap, a:key, '')
+
+  if l:action ==# 'open'
+    let l:sel = s:Selected(a:winid)
+    if isdirectory(l:sel)
+      if fnamemodify(l:sel, ':p') !=? s:state.cwd
+        call s:Navigate(l:sel, s:state.cwd)
+      endif
+    else
+      call popup_close(a:winid)
+      call win_execute(s:state.caller, 'edit ' . fnameescape(l:sel))
     endif
-    call s:Render(l:target, b:mindir.cwd)
-  else
-    let l:mindir_buf = bufnr()
-    execute 'edit' fnameescape(l:target)
-    execute 'silent! bwipeout' l:mindir_buf
+  elseif l:action ==# 'parent'
+    if !empty(s:state.content)
+      call s:Navigate(s:state.content[0], s:state.cwd)
+    endif
+  elseif l:action ==# 'dots'
+    let s:state.dots = !s:state.dots
+    call s:Navigate(s:state.cwd, s:Selected(a:winid))
+  elseif l:action ==# 'home'
+    call s:Navigate($HOME, '')
+  elseif l:action ==# 'down'
+    call win_execute(a:winid, 'normal! j')
+  elseif l:action ==# 'up'
+    call win_execute(a:winid, 'normal! k')
+  elseif l:action ==# 'close'
+    call popup_close(a:winid)
   endif
+
+  return 1
 endfunction
 
-function! s:Dir()
-  let l:target = s:Selected()
-  if !isdirectory(l:target)
-    return
+function! s:Open(...)
+  let l:dir = a:0 ? a:1 : ''
+  if l:dir ==# ''
+    let l:dir = expand('%:p:h')
+    if l:dir ==# '' || !isdirectory(l:dir)
+      let l:dir = getcwd()
+    endif
   endif
-  if fnamemodify(l:target, ':p') ==? b:mindir.cwd
-    return
-  endif
-  call s:Render(l:target, b:mindir.cwd)
+  let l:dir = fnamemodify(l:dir, ':p')
+
+  let s:state = {
+        \ 'cwd':     '',
+        \ 'content': [],
+        \ 'dots':    get(g:, 'mindir_dots', 0),
+        \ 'winid':   0,
+        \ 'caller':  win_getid(),
+        \ 'keymap':  s:BuildKeymap(),
+        \ }
+
+  let [l:lines, l:content, l:focus_line] = s:Render(l:dir, '')
+
+  let s:state.winid = popup_create(l:lines, {
+        \ 'filter':     function('s:Filter'),
+        \ 'mapping':    0,
+        \ 'cursorline': 1,
+        \ 'border':     [],
+        \ 'title':      ' ' . fnamemodify(s:state.cwd[: -2], ':t') . ' ',
+        \ 'maxheight':  &lines - 6,
+        \ 'maxwidth':   &columns - 10,
+        \ 'minwidth':   30,
+        \ })
+
+  call s:ApplySyntax()
+  call s:SetCursor(l:focus_line)
 endfunction
 
-function! s:Up()
-  if empty(b:mindir.content)
-    return
-  endif
-  call s:Render(b:mindir.content[0], b:mindir.cwd)
-endfunction
-
-function! s:Open()
-  let l:target = s:Selected()
-  if isdirectory(l:target)
-    return
-  endif
-  let l:mindir_buf = bufnr()
-  execute 'edit' fnameescape(l:target)
-  execute 'silent! bwipeout' l:mindir_buf
-endfunction
-
-function! s:Peek()
-  let l:target = s:Selected()
-  if isdirectory(l:target)
-    return
-  endif
-  execute 'edit' fnameescape(l:target)
-endfunction
-
-function! s:ToggleDots()
-  let b:mindir.dots = !b:mindir.dots
-  call s:Render(b:mindir.cwd, s:Selected())
-endfunction
-
-function! s:Refresh()
-  call s:Render(b:mindir.cwd, s:Selected())
-endfunction
-
-function! s:Quit()
-  let l:buf = bufnr()
-  if winnr('$') > 1
-    close
-  elseif len(getbufinfo({'buflisted': 1})) > 0
-    bprevious
-  else
-    quit
-  endif
-  execute 'silent! bwipeout' l:buf
-endfunction
-
-function! s:Setup(dir)
-  setlocal buftype=nofile bufhidden=hide buflisted
-  setlocal noswapfile undolevels=-1 nowrap nomodifiable
-  setlocal cursorline nonumber norelativenumber signcolumn=no
-
-  let b:mindir = {'cwd': '', 'content': [], 'dots': get(g:, 'mindir_dots', 1)}
-
-  call s:Render(a:dir, '')
-
-  nnoremap <buffer>        <Plug>(mindir-enter)   :call <SID>Enter()<CR>
-  nnoremap <buffer>        <Plug>(mindir-up)      :call <SID>Up()<CR>
-  nnoremap <buffer>        <Plug>(mindir-dots)    :call <SID>ToggleDots()<CR>
-  nnoremap <buffer>        <Plug>(mindir-home)    :call <SID>Render($HOME, '')<CR>
-  nnoremap <buffer>        <Plug>(mindir-refresh) :call <SID>Refresh()<CR>
-  nnoremap <buffer>        <Plug>(mindir-open)    :call <SID>Open()<CR>
-  nnoremap <buffer>        <Plug>(mindir-dir)     :call <SID>Dir()<CR>
-  nnoremap <buffer>        <Plug>(mindir-peek)    :call <SID>Peek()<CR>
-  nnoremap <buffer>        <Plug>(mindir-quit)    :call <SID>Quit()<CR>
-
-  nmap <buffer><nowait> e             <Plug>(mindir-dir)
-  nmap <buffer><nowait> <2-LeftMouse> <Plug>(mindir-enter)
-  nmap <buffer><nowait> <CR>          <Plug>(mindir-peek)
-  nmap <buffer><nowait> p             <Plug>(mindir-up)
-  nmap <buffer><nowait> d             <Plug>(mindir-dots)
-  nmap <buffer><nowait> h             <Plug>(mindir-home)
-  nmap <buffer><nowait> r             <Plug>(mindir-refresh)
-  nmap <buffer><nowait> o             <Plug>(mindir-open)
-  nmap <buffer><nowait> q             <Plug>(mindir-quit)
-
-  syntax clear
-  syntax match Directory /^\.\.$\|.*[/\\]$/
-
-  setlocal filetype=mindir
-endfunction
-
-function! s:OnBufEnter()
-  if exists('b:mindir')
-    silent execute 'lchdir' fnameescape(b:mindir.cwd)
-    return
-  endif
-  let l:path = expand('%:p')
-  if !isdirectory(l:path)
-    return
-  endif
-  call s:Setup(l:path)
-endfunction
-
-augroup Mindir
-  autocmd!
-  autocmd BufEnter * call s:OnBufEnter()
-augroup END
+command! -nargs=? -complete=dir Mindir call s:Open(<f-args>)
